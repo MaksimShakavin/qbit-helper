@@ -1,0 +1,25 @@
+# This is an example configuration file that documents all the options.
+# It will need to be modified for your specific use case.
+# Please refer to the link below for more details on how to set up the configuration file
+
+commands:
+  # Dry run. Don't delete anything
+  dry: true
+  # Removes .torrent files from completed directory, that no more exist in the client of not
+  # part of a specified categories
+  monitor_completed: false
+
+qbittorrent:
+  host: ''
+  user: ''
+  password: ''
+  disable_ssl: true
+
+
+monitor_completed:
+  # directory to monitor
+  completed_dir: ''
+  # will remove files if they are not part of a category
+  categories:
+    - cat1
+    - cat2
