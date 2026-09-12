@@ -1,25 +1,27 @@
-# This is an example configuration file that documents all the options.
-# It will need to be modified for your specific use case.
-# Please refer to the link below for more details on how to set up the configuration file
+# Example configuration for qbit-torrent-files-cleaner.
+# Copy this to your config path (default: /config/config.yaml) and edit it.
 
 commands:
-  # Dry run. Don't delete anything
+  # Dry run: log what would be removed without deleting anything.
+  # Keep this true until you have confirmed the tool targets the right files.
   dry: true
-  # Removes .torrent files from completed directory, that no more exist in the client of not
-  # part of a specified categories
+  # Enable the completed-directory cleanup task.
   monitor_completed: false
 
 qbittorrent:
-  host: ''
-  user: ''
-  password: ''
-  disable_ssl: true
-
+  # Base URL of the qBittorrent Web UI, e.g. http://localhost:8080
+  host: "http://localhost:8080"
+  user: ""
+  password: ""
+  # Verify the Web UI's TLS certificate. Set to false for self-signed certs.
+  # (The legacy `disable_ssl` key is still accepted: disable_ssl: true == verify_ssl: false.)
+  verify_ssl: false
 
 monitor_completed:
-  # directory to monitor
-  completed_dir: ''
-  # will remove files if they are not part of a category
+  # Directory containing the .torrent files to clean up.
+  completed_dir: ""
+  # A .torrent file is kept only if a torrent with a matching info hash exists
+  # in qBittorrent under one of these categories; otherwise it is removed.
   categories:
-    - cat1
-    - cat2
+    - movies
+    - tv

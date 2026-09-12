@@ -1,0 +1,90 @@
+"""Command-line entry point for qbit-torrent-files-cleaner."""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+from collections.abc import Sequence
+
+from qbit_torrent_files_cleaner import __version__
+from qbit_torrent_files_cleaner.client import QBittorrentClient, QBittorrentError
+from qbit_torrent_files_cleaner.config import Config, ConfigError
+from qbit_torrent_files_cleaner.monitor_completed import monitor_completed
+
+logger = logging.getLogger("qbit_torrent_files_cleaner")
+
+DEFAULT_CONFIG_PATH = "/config/config.yaml"
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argument parser."""
+    parser = argparse.ArgumentParser(
+        prog="qbit-torrent-files-cleaner",
+        description="Keep a qBittorrent completed directory tidy.",
+    )
+    parser.add_argument(
+        "--config",
+        default=DEFAULT_CONFIG_PATH,
+        help=f"Path to the YAML config file (default: {DEFAULT_CONFIG_PATH}).",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging verbosity (default: INFO).",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+    return parser
+
+
+def _configure_logging(level: str) -> None:
+    logging.basicConfig(
+        stream=sys.stdout,
+        level=getattr(logging, level),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    # These libraries are noisy at INFO; only surface their warnings and errors.
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("qbittorrentapi").setLevel(logging.WARNING)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run qbit-torrent-files-cleaner. Returns a process exit code."""
+    args = build_parser().parse_args(argv)
+    _configure_logging(args.log_level)
+
+    try:
+        config = Config.load(args.config)
+    except ConfigError as exc:
+        logger.error("%s", exc)
+        return 2
+
+    if not config.commands.monitor_completed:
+        logger.info("No commands enabled in config; nothing to do.")
+        return 0
+
+    try:
+        client = QBittorrentClient(config.qbittorrent)
+        client.connect()
+        monitor_completed(config, client)
+    except QBittorrentError as exc:
+        logger.error("%s", exc)
+        return 1
+    except ValueError as exc:
+        logger.error("%s", exc)
+        return 2
+    except Exception:
+        logger.exception("Unexpected error")
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

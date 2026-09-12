@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=77", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qbit-torrent-files-cleaner"
+description = "A small CLI to keep a qBittorrent completed directory tidy by removing orphaned .torrent files."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Maksim Shakavin" }]
+keywords = ["qbittorrent", "torrent", "cli", "cleanup"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: System Administrators",
+  "Programming Language :: Python :: 3",
+  "Topic :: Communications :: File Sharing",
+]
+dynamic = ["version"]
+dependencies = [
+  "qbittorrent-api>=2026.8.1",
+  "PyYAML>=6.0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.1.1",
+  "pytest-cov>=7.0.0",
+  "ruff>=0.14.0",
+  "mypy>=1.18.0",
+  "types-PyYAML>=6.0.12",
+]
+
+[project.scripts]
+qbit-torrent-files-cleaner = "qbit_torrent_files_cleaner.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/MaksimShakavin/qbit-torrent-files-cleaner"
+Repository = "https://github.com/MaksimShakavin/qbit-torrent-files-cleaner"
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.coverage.run]
+source = ["qbit_torrent_files_cleaner"]
+branch = true
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "I",   # isort
+  "B",   # flake8-bugbear
+  "UP",  # pyupgrade
+  "SIM", # flake8-simplify
+  "C4",  # flake8-comprehensions
+  "RUF", # ruff-specific
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src"]

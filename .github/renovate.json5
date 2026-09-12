@@ -1,0 +1,28 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":automergeMinor",
+    "schedule:earlyMondays",
+  ],
+  labels: ["dependencies"],
+  lockFileMaintenance: {
+    enabled: true,
+  },
+  packageRules: [
+    {
+      description: "Group and automerge GitHub Actions digests/minor updates",
+      matchManagers: ["github-actions"],
+      groupName: "github-actions",
+      automerge: true,
+    },
+    {
+      description: "Group Python dev dependencies",
+      matchManagers: ["pep621"],
+      matchDepTypes: ["optional-dependencies"],
+      groupName: "python-dev-dependencies",
+    },
+  ],
+}
