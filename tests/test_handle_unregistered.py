@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from qbit_torrent_files_cleaner.arr import HistoryRecord, QueueItem
-from qbit_torrent_files_cleaner.client import TorrentInfo, TrackerInfo
+from qbit_torrent_files_cleaner.arr import ArrError, HistoryRecord, QueueItem
+from qbit_torrent_files_cleaner.client import QBittorrentError, TorrentInfo, TrackerInfo
 from qbit_torrent_files_cleaner.config import CommandConfig, Config, HandleUnregisteredConfig
 from qbit_torrent_files_cleaner.handle_unregistered import handle_unregistered, is_unregistered
 
@@ -120,6 +120,35 @@ def test_history_path_deletes_torrent_and_searches():
     assert result.imported_handled == 1
 
 
+def test_history_path_searches_before_deleting():
+    # The replacement search must be triggered before the destructive delete, so a
+    # failed search never leaves a torrent deleted with no replacement ordered.
+    arr = _arr()
+    arr.find_history_record.return_value = HistoryRecord(series_id=5)
+    client = _client([_torrent()], [DEAD])
+
+    manager = MagicMock()
+    manager.attach_mock(arr.trigger_search, "trigger_search")
+    manager.attach_mock(client.delete_torrent, "delete_torrent")
+
+    handle_unregistered(_config(dry=False), client, [arr])
+
+    assert [call[0] for call in manager.mock_calls] == ["trigger_search", "delete_torrent"]
+
+
+def test_history_search_failure_leaves_torrent_undeleted():
+    arr = _arr()
+    arr.find_history_record.return_value = HistoryRecord(series_id=5)
+    arr.trigger_search.side_effect = ArrError("sonarr down")
+    client = _client([_torrent()], [DEAD])
+
+    result = handle_unregistered(_config(dry=False), client, [arr])
+
+    client.delete_torrent.assert_not_called()
+    assert result.imported_handled == 0
+    assert result.errors == 1
+
+
 def test_reports_when_not_in_any_arr():
     client = _client([_torrent()], [DEAD])
     result = handle_unregistered(_config(dry=False), client, [_arr()])
@@ -154,6 +183,32 @@ def test_hybrid_torrent_uses_v1_hash_for_arr_and_client_hash_for_delete():
     arr.find_queue_item.assert_called_once_with("v1hash")
     arr.find_history_record.assert_called_once_with("v1hash")
     client.delete_torrent.assert_called_once_with("qbhash", delete_files=True)
+
+
+def test_one_torrent_failure_does_not_abort_the_batch():
+    # First torrent's queue delete fails; the run must log/count it and still handle
+    # the second torrent rather than aborting.
+    arr = _arr()
+    arr.find_queue_item.return_value = QueueItem(id=7, download_id="abc", title="Show")
+    arr.delete_queue_item.side_effect = [ArrError("boom"), None]
+    client = _client([_torrent(name="first"), _torrent(name="second")], [DEAD])
+
+    result = handle_unregistered(_config(dry=False), client, [arr])
+
+    assert result.scanned == 2
+    assert result.unregistered == 2
+    assert result.errors == 1
+    assert result.queue_handled == 1  # the second torrent still handled
+
+
+def test_tracker_fetch_failure_is_isolated():
+    client = _client([_torrent()], None)
+    client.get_trackers.side_effect = QBittorrentError("trackers unavailable")
+
+    result = handle_unregistered(_config(dry=False), client, [_arr()])
+
+    assert result.errors == 1
+    assert result.unregistered == 0
 
 
 def test_queue_preferred_over_history():

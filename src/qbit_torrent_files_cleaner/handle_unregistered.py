@@ -22,8 +22,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from qbit_torrent_files_cleaner.arr import ArrClient
-from qbit_torrent_files_cleaner.client import QBittorrentClient, TorrentInfo, TrackerInfo
+from qbit_torrent_files_cleaner.arr import ArrClient, ArrError
+from qbit_torrent_files_cleaner.client import (
+    QBittorrentClient,
+    QBittorrentError,
+    TorrentInfo,
+    TrackerInfo,
+)
 from qbit_torrent_files_cleaner.config import Config
 
 logger = logging.getLogger(__name__)
@@ -44,6 +49,7 @@ class HandleUnregisteredResult:
     queue_handled: int = 0
     imported_handled: int = 0
     reported: int = 0
+    errors: int = 0
 
 
 def is_unregistered(trackers: list[TrackerInfo], patterns: list[str]) -> bool:
@@ -99,38 +105,47 @@ def handle_unregistered(
     queue_handled = 0
     imported_handled = 0
     reported = 0
+    errors = 0
 
     for torrent in torrents:
         scanned += 1
-        trackers = client.get_trackers(torrent.hash)
-        if not is_unregistered(trackers, settings.unregistered_patterns):
-            continue
+        # Isolate each torrent: a failure talking to qBittorrent or an *arr for one
+        # torrent is logged and counted, but must not abort the whole batch and leave
+        # the remaining unregistered torrents unhandled.
+        try:
+            trackers = client.get_trackers(torrent.hash)
+            if not is_unregistered(trackers, settings.unregistered_patterns):
+                continue
 
-        unregistered += 1
-        logger.info("Unregistered torrent: %s (%s)", torrent.name, torrent.hash)
+            unregistered += 1
+            logger.info("Unregistered torrent: %s (%s)", torrent.name, torrent.hash)
 
-        if _handle_via_queue(torrent.infohash_v1, torrent.name, arr_clients, is_dry_run):
-            queue_handled += 1
-        elif _handle_via_history(torrent, client, arr_clients, is_dry_run):
-            imported_handled += 1
-        else:
-            logger.warning(
-                "Unregistered torrent not found in any Radarr/Sonarr queue or history; "
-                "leaving it for manual review: %s (%s)",
-                torrent.name,
-                torrent.hash,
-            )
-            reported += 1
+            if _handle_via_queue(torrent.infohash_v1, torrent.name, arr_clients, is_dry_run):
+                queue_handled += 1
+            elif _handle_via_history(torrent, client, arr_clients, is_dry_run):
+                imported_handled += 1
+            else:
+                logger.warning(
+                    "Unregistered torrent not found in any Radarr/Sonarr queue or history; "
+                    "leaving it for manual review: %s (%s)",
+                    torrent.name,
+                    torrent.hash,
+                )
+                reported += 1
+        except (QBittorrentError, ArrError) as exc:
+            errors += 1
+            logger.error("Failed to handle %s (%s): %s", torrent.name, torrent.hash, exc)
 
     logger.info(
         "Done. Scanned %d torrent(s); %d unregistered; %s via queue %d, via history %d; "
-        "reported %d.",
+        "reported %d; errors %d.",
         scanned,
         unregistered,
         "would handle" if is_dry_run else "handled",
         queue_handled,
         imported_handled,
         reported,
+        errors,
     )
     return HandleUnregisteredResult(
         scanned=scanned,
@@ -138,6 +153,7 @@ def handle_unregistered(
         queue_handled=queue_handled,
         imported_handled=imported_handled,
         reported=reported,
+        errors=errors,
     )
 
 
@@ -174,19 +190,25 @@ def _handle_via_history(
 
     The \\*arr history is looked up by the v1 info hash (the download id), while the
     qBittorrent deletion is keyed by qBittorrent's own torrent hash.
+
+    The replacement search is triggered *before* the torrent is deleted: if the search
+    request fails the torrent is left intact and retried on the next run, rather than
+    being destroyed with no replacement ordered. The benign inverse — search succeeds
+    but the delete fails — leaves the dead torrent in place for the next run to remove.
     """
     for arr in arr_clients:
         record = arr.find_history_record(torrent.infohash_v1)
         if record is None:
             continue
         logger.info(
-            "%s: %s imported torrent %s and triggering a replacement search",
+            "%s: %s a replacement and %s imported torrent %s",
             arr.name,
-            "would delete + search" if is_dry_run else "deleting + searching",
+            "would search for" if is_dry_run else "searching for",
+            "delete" if is_dry_run else "deleting",
             torrent.name,
         )
         if not is_dry_run:
-            client.delete_torrent(torrent.hash, delete_files=True)
             arr.trigger_search(record)
+            client.delete_torrent(torrent.hash, delete_files=True)
         return True
     return False

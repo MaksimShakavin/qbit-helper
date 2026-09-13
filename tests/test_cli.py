@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from qbit_torrent_files_cleaner import cli
+from qbit_torrent_files_cleaner.handle_unregistered import HandleUnregisteredResult
 
 
 @pytest.fixture
@@ -96,13 +97,32 @@ radarr:
   api_key: key
 """,
     )
-    called = MagicMock()
+    called = MagicMock(return_value=HandleUnregisteredResult(scanned=1))
     monkeypatch.setattr(cli, "handle_unregistered", called)
     monkeypatch.setattr(cli, "build_arr_clients", MagicMock(return_value=["client"]))
 
     assert cli.main(["--config", str(path)]) == 0
     patch_client.connect.assert_called_once()
     called.assert_called_once()
+
+
+def test_handle_unregistered_errors_exit_nonzero(tmp_path, monkeypatch, patch_client):
+    path = _write_config(
+        tmp_path,
+        """
+commands:
+  handle_unregistered: true
+radarr:
+  url: http://radarr:7878
+  api_key: key
+""",
+    )
+    monkeypatch.setattr(
+        cli, "handle_unregistered", MagicMock(return_value=HandleUnregisteredResult(errors=2))
+    )
+    monkeypatch.setattr(cli, "build_arr_clients", MagicMock(return_value=["client"]))
+
+    assert cli.main(["--config", str(path)]) == 1
 
 
 def test_arr_error_returns_1(tmp_path, monkeypatch, patch_client):
