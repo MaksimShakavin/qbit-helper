@@ -85,6 +85,42 @@ monitor_completed:
     assert cli.main(["--config", str(path)]) == 2
 
 
+def test_runs_handle_unregistered(tmp_path, monkeypatch, patch_client):
+    path = _write_config(
+        tmp_path,
+        """
+commands:
+  handle_unregistered: true
+radarr:
+  url: http://radarr:7878
+  api_key: key
+""",
+    )
+    called = MagicMock()
+    monkeypatch.setattr(cli, "handle_unregistered", called)
+    monkeypatch.setattr(cli, "build_arr_clients", MagicMock(return_value=["client"]))
+
+    assert cli.main(["--config", str(path)]) == 0
+    patch_client.connect.assert_called_once()
+    called.assert_called_once()
+
+
+def test_arr_error_returns_1(tmp_path, monkeypatch, patch_client):
+    path = _write_config(
+        tmp_path,
+        """
+commands:
+  handle_unregistered: true
+radarr:
+  url: http://radarr:7878
+  api_key: key
+""",
+    )
+    monkeypatch.setattr(cli, "build_arr_clients", MagicMock(return_value=["client"]))
+    monkeypatch.setattr(cli, "handle_unregistered", MagicMock(side_effect=cli.ArrError("boom")))
+    assert cli.main(["--config", str(path)]) == 1
+
+
 def test_version_flag(capsys):
     with pytest.raises(SystemExit) as exc:
         cli.main(["--version"])

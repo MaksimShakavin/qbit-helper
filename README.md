@@ -2,9 +2,16 @@
 
 [![CI](https://github.com/MaksimShakavin/qbit-torrent-files-cleaner/actions/workflows/ci.yaml/badge.svg)](https://github.com/MaksimShakavin/qbit-torrent-files-cleaner/actions/workflows/ci.yaml)
 
-A small CLI that keeps a qBittorrent *completed* directory tidy. It scans a
-directory of `.torrent` files and removes any whose torrent is no longer present
-in qBittorrent under a configured set of categories.
+A small CLI of housekeeping tasks for a qBittorrent + \*arr + rutracker setup:
+
+- **`monitor_completed`** keeps a qBittorrent *completed* directory tidy — it scans a
+  directory of `.torrent` files and removes any whose torrent is no longer present in
+  qBittorrent under a configured set of categories.
+- **`handle_unregistered`** detects torrents the tracker admins have deleted (they go
+  *unregistered* in qBittorrent) and gets Radarr/Sonarr to blocklist the dead release
+  and grab a replacement.
+
+Each task is toggled independently in the config.
 
 It talks to qBittorrent through the [Web API v2](https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.1))
 via [`qbittorrent-api`](https://pypi.org/project/qbittorrent-api/) and matches
@@ -44,6 +51,41 @@ For each `*.torrent` file in `monitor_completed.completed_dir`:
 3. Otherwise the file is considered orphaned and removed (or, in dry-run mode,
    just logged).
 
+## Handling unregistered (tracker-deleted) torrents
+
+This is the one manual step the rest of the flow could not automate. Radarr/Sonarr
+grab a release from rutracker into qBittorrent, and emonoda keeps that `.torrent`
+fresh as new episodes are added to the *same* forum topic. But sometimes the tracker
+admins **delete the topic** (a better release exists, or the uploader broke the
+rules). The torrent then goes **unregistered** — the tracker returns an error with a
+message like *"Torrent not registered with this tracker"*. emonoda can't fix this (the
+topic it would re-download is gone) and the \*arr apps don't re-grab on their own, so
+no replacement arrives and, for ongoing series, no new episodes.
+
+`handle_unregistered` closes that gap. For each torrent (optionally limited to the
+configured `categories`) it reads the tracker status and, when the torrent is truly
+unregistered — no working tracker *and* a not-working tracker whose message matches a
+known pattern (so a tracker that is merely temporarily down is left alone) — it:
+
+- **If the download is still in an \*arr queue:** deletes the queue item with
+  *remove from client* + *blocklist* + *redownload*. The \*arr removes the torrent and
+  its data from qBittorrent, blocklists the bad release, and searches for a
+  replacement — the three manual steps in one call.
+- **If the \*arr already imported it** (now just seeding, no queue item): looks the
+  download up in the \*arr's history to find the movie/series, deletes the torrent and
+  its data from qBittorrent, and triggers a targeted search (Radarr: movie search;
+  Sonarr: series, or season when `season_search` is on and the season is known).
+- **If it belongs to no configured \*arr:** logs a warning and leaves it for you to
+  review — it never deletes something it can't attribute to Radarr/Sonarr.
+
+Because the dead torrent leaves qBittorrent, its exported `.torrent` becomes an orphan
+that a later `monitor_completed` run prunes, keeping the whole pipeline consistent.
+It does **not** touch on-disk data that no torrent references (qbit-manage's "remove
+orphans"), which can conflict with emonoda's data layout.
+
+`dry: true` logs exactly what it *would* delete and search without touching anything —
+run it that way first.
+
 ## Installation
 
 ```bash
@@ -66,7 +108,37 @@ Options:
 
 - `--config PATH` — path to the YAML config (default: `/config/config.yaml`).
 - `--log-level {DEBUG,INFO,WARNING,ERROR}` — verbosity (default: `INFO`).
+- `--log-format {text,json}` — output format (default: `text`, or the
+  `QBIT_CLEANER_LOG_FORMAT` environment variable).
 - `--version` — print the version and exit.
+
+## Logging
+
+Logs go to stdout in one of two formats.
+
+`text` (default) — human-readable, one line per record:
+
+```
+2026-09-13 22:24:23 INFO qbit_torrent_files_cleaner.handle_unregistered: ...
+```
+
+`json` (`--log-format json`, or `QBIT_CLEANER_LOG_FORMAT=json`) — one JSON
+object per line:
+
+```json
+{"time": "2026-09-13T20:24:24.149610+00:00", "level": "INFO", "logger": "qbit_torrent_files_cleaner.handle_unregistered", "message": "..."}
+```
+
+Fields:
+
+- `time` — ISO 8601 / RFC 3339 timestamp in UTC.
+- `level` — the log level (`DEBUG`/`INFO`/`WARNING`/`ERROR`).
+- `logger` — the logger name.
+- `message` — the rendered log message.
+- `exception` — present only when an error is logged with a traceback.
+
+Any structured fields attached via `logger.*(..., extra={...})` are merged into
+the object as additional keys.
 
 ## Configuration
 
@@ -74,8 +146,9 @@ See [`config.example.yaml`](./config.example.yaml) for a documented example.
 
 ```yaml
 commands:
-  dry: true # log only, delete nothing — flip to false when ready
+  dry: true # log only, change nothing — flip to false when ready
   monitor_completed: true
+  handle_unregistered: false # needs radarr/sonarr configured below
 
 qbittorrent:
   host: "http://localhost:8080"
@@ -88,6 +161,21 @@ monitor_completed:
   categories:
     - movies
     - tv
+
+handle_unregistered:
+  categories: # leave empty to scan every category
+    - movies
+    - tv
+  season_search: false # Sonarr: search the affected season instead of the series
+
+# Only used by handle_unregistered; an instance is used only when url and api_key
+# are both set.
+radarr:
+  url: "http://localhost:7878"
+  api_key: ""
+sonarr:
+  url: "http://localhost:8989"
+  api_key: ""
 ```
 
 > **Tip:** leave `commands.dry: true` for the first run and check the logs before

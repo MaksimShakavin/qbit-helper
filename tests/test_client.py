@@ -20,8 +20,10 @@ def patched_api(monkeypatch):
     return instance
 
 
-def _torrent(category, *, v1=None, v2=None, hash_=None):
-    return SimpleNamespace(category=category, infohash_v1=v1, infohash_v2=v2, hash=hash_)
+def _torrent(category, *, v1=None, v2=None, hash_=None, name="", state=""):
+    return SimpleNamespace(
+        category=category, infohash_v1=v1, infohash_v2=v2, hash=hash_, name=name, state=state
+    )
 
 
 def test_connect_success(patched_api):
@@ -75,3 +77,70 @@ def test_collect_hashes_empty_when_no_match(patched_api):
     patched_api.torrents_info.return_value = [_torrent("other", v1="AAA")]
     client = QBittorrentClient(QBittorrentConfig())
     assert client.collect_hashes_for_categories(["movies"]) == set()
+
+
+def test_list_torrents_filters_by_category(patched_api):
+    patched_api.torrents_info.return_value = [
+        _torrent("movies", v1="AAA", name="A", state="up"),
+        _torrent("other", v1="BBB"),
+    ]
+    client = QBittorrentClient(QBittorrentConfig())
+    result = client.list_torrents(["movies"])
+    assert len(result) == 1
+    assert result[0].hash == "aaa"
+    assert result[0].name == "A"
+    assert result[0].category == "movies"
+    assert result[0].state == "up"
+
+
+def test_list_torrents_all_when_no_categories(patched_api):
+    patched_api.torrents_info.return_value = [
+        _torrent("movies", v1="AAA"),
+        _torrent("other", v1="BBB"),
+    ]
+    client = QBittorrentClient(QBittorrentConfig())
+    assert {t.hash for t in client.list_torrents()} == {"aaa", "bbb"}
+
+
+def test_list_torrents_prefers_v1_hash(patched_api):
+    patched_api.torrents_info.return_value = [_torrent("movies", v1="AAA", hash_="ZZZ")]
+    client = QBittorrentClient(QBittorrentConfig())
+    assert client.list_torrents(["movies"])[0].hash == "aaa"
+
+
+def test_list_torrents_api_error_wrapped(patched_api):
+    patched_api.torrents_info.side_effect = qbittorrentapi.APIError("boom")
+    client = QBittorrentClient(QBittorrentConfig())
+    with pytest.raises(QBittorrentError, match="list torrents"):
+        client.list_torrents(["movies"])
+
+
+def test_get_trackers_maps_fields(patched_api):
+    patched_api.torrents_trackers.return_value = [
+        SimpleNamespace(url="http://t", status=4, msg="unregistered torrent"),
+    ]
+    client = QBittorrentClient(QBittorrentConfig())
+    trackers = client.get_trackers("abc")
+    assert trackers[0].url == "http://t"
+    assert trackers[0].status == 4
+    assert trackers[0].message == "unregistered torrent"
+
+
+def test_get_trackers_api_error_wrapped(patched_api):
+    patched_api.torrents_trackers.side_effect = qbittorrentapi.APIError("boom")
+    client = QBittorrentClient(QBittorrentConfig())
+    with pytest.raises(QBittorrentError, match="trackers"):
+        client.get_trackers("abc")
+
+
+def test_delete_torrent_calls_api(patched_api):
+    client = QBittorrentClient(QBittorrentConfig())
+    client.delete_torrent("abc", delete_files=True)
+    patched_api.torrents_delete.assert_called_once_with(delete_files=True, torrent_hashes="abc")
+
+
+def test_delete_torrent_api_error_wrapped(patched_api):
+    patched_api.torrents_delete.side_effect = qbittorrentapi.APIError("boom")
+    client = QBittorrentClient(QBittorrentConfig())
+    with pytest.raises(QBittorrentError, match="delete torrent"):
+        client.delete_torrent("abc")
