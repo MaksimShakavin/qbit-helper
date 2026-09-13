@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/MaksimShakavin/qbit-torrent-files-cleaner/compare/v0.2.0...v0.3.0) (2026-09-13)
+
+
+### Features
+
+* handle tracker-deleted (unregistered) torrents + JSON logging ([#3](https://github.com/MaksimShakavin/qbit-torrent-files-cleaner/issues/3)) ([bffae1e](https://github.com/MaksimShakavin/qbit-torrent-files-cleaner/commit/bffae1eb8f3be495fd000d5678d70215cec23d13))
+
 ## [0.2.0](https://github.com/MaksimShakavin/qbit-torrent-files-cleaner/compare/v0.1.0...v0.2.0) (2026-09-12)
 
 
