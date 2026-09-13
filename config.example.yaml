@@ -7,6 +7,8 @@ commands:
   dry: true
   # Enable the completed-directory cleanup task.
   monitor_completed: false
+  # Enable the unregistered-torrent handling task (needs radarr/sonarr below).
+  handle_unregistered: false
 
 qbittorrent:
   # Base URL of the qBittorrent Web UI, e.g. http://localhost:8080
@@ -25,3 +27,33 @@ monitor_completed:
   categories:
     - movies
     - tv
+
+handle_unregistered:
+  # Only torrents in these categories are considered. Leave empty (or omit the
+  # key) to scan every category.
+  categories:
+    - movies
+    - tv
+  # A torrent is treated as unregistered when it has no working tracker and a
+  # not-working tracker whose message contains one of these (case-insensitive)
+  # substrings. Omit this key to use the built-in defaults.
+  # unregistered_patterns:
+  #   - "unregistered torrent"
+  #   - "torrent not registered"
+  #   - "torrent not found"
+  # Sonarr only: search just the affected season (when known) instead of the whole
+  # series. Radarr always does a movie search.
+  season_search: false
+
+# Radarr/Sonarr are only used by handle_unregistered. An instance is used only when
+# both url and api_key are set; leave one blank to skip that app. The api_key is in
+# each app under Settings -> General -> Security.
+radarr:
+  url: ""      # e.g. http://localhost:7878
+  api_key: ""
+  verify_ssl: false
+
+sonarr:
+  url: ""      # e.g. http://localhost:8989
+  api_key: ""
+  verify_ssl: false

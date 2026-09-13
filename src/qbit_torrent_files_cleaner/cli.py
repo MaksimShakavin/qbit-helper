@@ -8,8 +8,10 @@ import sys
 from collections.abc import Sequence
 
 from qbit_torrent_files_cleaner import __version__
+from qbit_torrent_files_cleaner.arr import ArrError, build_arr_clients
 from qbit_torrent_files_cleaner.client import QBittorrentClient, QBittorrentError
 from qbit_torrent_files_cleaner.config import Config, ConfigError
+from qbit_torrent_files_cleaner.handle_unregistered import handle_unregistered
 from qbit_torrent_files_cleaner.monitor_completed import monitor_completed
 
 logger = logging.getLogger("qbit_torrent_files_cleaner")
@@ -65,15 +67,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.error("%s", exc)
         return 2
 
-    if not config.commands.monitor_completed:
+    if not (config.commands.monitor_completed or config.commands.handle_unregistered):
         logger.info("No commands enabled in config; nothing to do.")
         return 0
 
     try:
         client = QBittorrentClient(config.qbittorrent)
         client.connect()
-        monitor_completed(config, client)
-    except QBittorrentError as exc:
+        if config.commands.monitor_completed:
+            monitor_completed(config, client)
+        if config.commands.handle_unregistered:
+            handle_unregistered(config, client, build_arr_clients(config))
+    except (QBittorrentError, ArrError) as exc:
         logger.error("%s", exc)
         return 1
     except ValueError as exc:

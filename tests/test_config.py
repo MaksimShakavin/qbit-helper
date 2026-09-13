@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from qbit_torrent_files_cleaner.config import Config, ConfigError
+from qbit_torrent_files_cleaner.config import (
+    DEFAULT_UNREGISTERED_PATTERNS,
+    Config,
+    ConfigError,
+)
 
 
 def _write(tmp_path, text):
@@ -101,3 +105,63 @@ def test_empty_file_uses_defaults(tmp_path):
     path = _write(tmp_path, "")
     config = Config.load(path)
     assert config.commands.monitor_completed is False
+
+
+def test_handle_unregistered_defaults(tmp_path):
+    path = _write(tmp_path, "")
+    config = Config.load(path)
+    assert config.commands.handle_unregistered is False
+    assert config.handle_unregistered.categories == []
+    assert config.handle_unregistered.unregistered_patterns == DEFAULT_UNREGISTERED_PATTERNS
+    assert config.handle_unregistered.season_search is False
+    assert config.radarr.enabled is False
+    assert config.sonarr.enabled is False
+
+
+def test_handle_unregistered_full_config(tmp_path):
+    path = _write(
+        tmp_path,
+        """
+commands:
+  handle_unregistered: true
+handle_unregistered:
+  categories: [movies, tv]
+  unregistered_patterns: ["dead"]
+  season_search: true
+radarr:
+  url: http://radarr:7878/
+  api_key: rkey
+sonarr:
+  url: http://sonarr:8989
+  api_key: skey
+  verify_ssl: true
+""",
+    )
+    config = Config.load(path)
+    assert config.commands.handle_unregistered is True
+    assert config.handle_unregistered.categories == ["movies", "tv"]
+    assert config.handle_unregistered.unregistered_patterns == ["dead"]
+    assert config.handle_unregistered.season_search is True
+    # Trailing slash is trimmed so URL joins are clean.
+    assert config.radarr.url == "http://radarr:7878"
+    assert config.radarr.enabled is True
+    assert config.sonarr.enabled is True
+    assert config.sonarr.verify_ssl is True
+
+
+def test_arr_disabled_without_api_key(tmp_path):
+    path = _write(tmp_path, "radarr:\n  url: http://radarr:7878\n")
+    config = Config.load(path)
+    assert config.radarr.enabled is False
+
+
+def test_handle_unregistered_categories_wrong_type_raises(tmp_path):
+    path = _write(tmp_path, "handle_unregistered:\n  categories: movies\n")
+    with pytest.raises(ConfigError, match=r"handle_unregistered\.categories must be a list"):
+        Config.load(path)
+
+
+def test_unregistered_patterns_wrong_type_raises(tmp_path):
+    path = _write(tmp_path, "handle_unregistered:\n  unregistered_patterns: nope\n")
+    with pytest.raises(ConfigError, match="unregistered_patterns must be a list"):
+        Config.load(path)
