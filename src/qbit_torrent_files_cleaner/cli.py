@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
+import os
 from collections.abc import Sequence
 
 from qbit_torrent_files_cleaner import __version__
@@ -12,11 +12,13 @@ from qbit_torrent_files_cleaner.arr import ArrError, build_arr_clients
 from qbit_torrent_files_cleaner.client import QBittorrentClient, QBittorrentError
 from qbit_torrent_files_cleaner.config import Config, ConfigError
 from qbit_torrent_files_cleaner.handle_unregistered import handle_unregistered
+from qbit_torrent_files_cleaner.logging_setup import FORMATS, TEXT, configure_logging
 from qbit_torrent_files_cleaner.monitor_completed import monitor_completed
 
 logger = logging.getLogger("qbit_torrent_files_cleaner")
 
 DEFAULT_CONFIG_PATH = "/config/config.yaml"
+LOG_FORMAT_ENV = "QBIT_CLEANER_LOG_FORMAT"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,6 +39,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Logging verbosity (default: INFO).",
     )
     parser.add_argument(
+        "--log-format",
+        default=os.environ.get(LOG_FORMAT_ENV, TEXT),
+        choices=list(FORMATS),
+        help=(
+            "Log output format: 'text' for humans, 'json' for line-delimited JSON "
+            f"suited to log shippers (default: text, or ${LOG_FORMAT_ENV})."
+        ),
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
@@ -44,22 +55,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _configure_logging(level: str) -> None:
-    logging.basicConfig(
-        stream=sys.stdout,
-        level=getattr(logging, level),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    # These libraries are noisy at INFO; only surface their warnings and errors.
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("qbittorrentapi").setLevel(logging.WARNING)
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     """Run qbit-torrent-files-cleaner. Returns a process exit code."""
     args = build_parser().parse_args(argv)
-    _configure_logging(args.log_level)
+    configure_logging(args.log_level, args.log_format)
 
     try:
         config = Config.load(args.config)

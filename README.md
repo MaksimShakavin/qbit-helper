@@ -108,7 +108,37 @@ Options:
 
 - `--config PATH` — path to the YAML config (default: `/config/config.yaml`).
 - `--log-level {DEBUG,INFO,WARNING,ERROR}` — verbosity (default: `INFO`).
+- `--log-format {text,json}` — output format (default: `text`, or the
+  `QBIT_CLEANER_LOG_FORMAT` environment variable).
 - `--version` — print the version and exit.
+
+## Logging
+
+Logs go to stdout in one of two formats.
+
+`text` (default) — human-readable, one line per record:
+
+```
+2026-09-13 22:24:23 INFO qbit_torrent_files_cleaner.handle_unregistered: ...
+```
+
+`json` (`--log-format json`, or `QBIT_CLEANER_LOG_FORMAT=json`) — one JSON
+object per line:
+
+```json
+{"time": "2026-09-13T20:24:24.149610+00:00", "level": "INFO", "logger": "qbit_torrent_files_cleaner.handle_unregistered", "message": "..."}
+```
+
+Fields:
+
+- `time` — ISO 8601 / RFC 3339 timestamp in UTC.
+- `level` — the log level (`DEBUG`/`INFO`/`WARNING`/`ERROR`).
+- `logger` — the logger name.
+- `message` — the rendered log message.
+- `exception` — present only when an error is logged with a traceback.
+
+Any structured fields attached via `logger.*(..., extra={...})` are merged into
+the object as additional keys.
 
 ## Configuration
 
