@@ -87,6 +87,15 @@ def test_find_history_record_radarr(session):
     assert record == HistoryRecord(movie_id=42)
 
 
+def test_find_history_record_queries_uppercased_download_id(session):
+    # *arr stores the info hash upper-cased and its history downloadId filter is
+    # case-sensitive, so the lookup must upper-case the (lower-cased) hash.
+    session.request.return_value = _response({"records": [{"movieId": 42}]})
+    _radarr().find_history_record("abcdef123")
+    _, kwargs = session.request.call_args
+    assert kwargs["params"] == {"downloadId": "ABCDEF123"}
+
+
 def test_find_history_record_sonarr_reads_season(session):
     session.request.return_value = _response(
         {"records": [{"seriesId": 5, "episodeId": 9, "data": {"seasonNumber": 3}}]}

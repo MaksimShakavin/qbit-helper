@@ -152,8 +152,13 @@ class ArrClient:
     # -- History + search (imported / seeding torrents) ---------------------
 
     def find_history_record(self, download_id: str) -> HistoryRecord | None:
-        """Find the movie/series a download belonged to via history."""
-        payload = self._request("GET", "history", params={"downloadId": download_id})
+        """Find the movie/series a download belonged to via history.
+
+        The \\*arr history ``downloadId`` filter matches case-sensitively and the apps
+        store the info hash upper-cased, so the query must be upper-cased too (our
+        hashes are lower-cased for the queue comparison).
+        """
+        payload = self._request("GET", "history", params={"downloadId": download_id.upper()})
         if isinstance(payload, dict):
             records: list[dict[str, Any]] = payload.get("records", [])
         else:
