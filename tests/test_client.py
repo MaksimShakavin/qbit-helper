@@ -81,8 +81,8 @@ def test_collect_hashes_empty_when_no_match(patched_api):
 
 def test_list_torrents_filters_by_category(patched_api):
     patched_api.torrents_info.return_value = [
-        _torrent("movies", v1="AAA", name="A", state="up"),
-        _torrent("other", v1="BBB"),
+        _torrent("movies", v1="AAA", hash_="AAA", name="A", state="up"),
+        _torrent("other", v1="BBB", hash_="BBB"),
     ]
     client = QBittorrentClient(QBittorrentConfig())
     result = client.list_torrents(["movies"])
@@ -95,17 +95,31 @@ def test_list_torrents_filters_by_category(patched_api):
 
 def test_list_torrents_all_when_no_categories(patched_api):
     patched_api.torrents_info.return_value = [
-        _torrent("movies", v1="AAA"),
-        _torrent("other", v1="BBB"),
+        _torrent("movies", v1="AAA", hash_="AAA"),
+        _torrent("other", v1="BBB", hash_="BBB"),
     ]
     client = QBittorrentClient(QBittorrentConfig())
     assert {t.hash for t in client.list_torrents()} == {"aaa", "bbb"}
 
 
-def test_list_torrents_prefers_v1_hash(patched_api):
+def test_list_torrents_hash_is_client_hash_v1_is_infohash(patched_api):
+    # v2/hybrid torrent: qBittorrent's own hash differs from the v1 info hash.
+    # ``hash`` (used for WebUI calls) must be qBittorrent's hash; ``infohash_v1``
+    # (used for *arr download-id matching) must be the v1 hash.
     patched_api.torrents_info.return_value = [_torrent("movies", v1="AAA", hash_="ZZZ")]
     client = QBittorrentClient(QBittorrentConfig())
-    assert client.list_torrents(["movies"])[0].hash == "aaa"
+    result = client.list_torrents(["movies"])[0]
+    assert result.hash == "zzz"
+    assert result.infohash_v1 == "aaa"
+
+
+def test_list_torrents_v1_falls_back_to_client_hash(patched_api):
+    # Legacy v1-only torrent reports no separate infohash_v1: fall back to hash.
+    patched_api.torrents_info.return_value = [_torrent("movies", v1=None, hash_="ZZZ")]
+    client = QBittorrentClient(QBittorrentConfig())
+    result = client.list_torrents(["movies"])[0]
+    assert result.hash == "zzz"
+    assert result.infohash_v1 == "zzz"
 
 
 def test_list_torrents_api_error_wrapped(patched_api):

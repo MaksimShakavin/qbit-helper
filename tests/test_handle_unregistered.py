@@ -14,6 +14,8 @@ from qbit_torrent_files_cleaner.handle_unregistered import handle_unregistered, 
 DEAD = TrackerInfo(
     url="http://tracker", status=4, message="Torrent not registered with this tracker"
 )
+# qBittorrent 5.2.x reports a dedicated "not registered" status 5 (observed live).
+DEAD_STATUS_5 = TrackerInfo(url="http://tracker", status=5, message="Torrent not registered")
 WORKING = TrackerInfo(url="http://tracker", status=2, message="Working")
 DHT = TrackerInfo(url="** [DHT] **", status=0, message="")
 
@@ -23,6 +25,10 @@ DHT = TrackerInfo(url="** [DHT] **", status=0, message="")
 
 def test_unregistered_true_for_matching_not_working_tracker():
     assert is_unregistered([DEAD], ["torrent not registered"]) is True
+
+
+def test_unregistered_true_for_status_5_not_registered():
+    assert is_unregistered([DEAD_STATUS_5], ["torrent not registered"]) is True
 
 
 def test_unregistered_false_when_a_tracker_is_working():
@@ -66,8 +72,14 @@ def _arr(name="radarr"):
     return arr
 
 
-def _torrent(hash_="abc", name="Show S01", category="tv"):
-    return TorrentInfo(hash=hash_, name=name, category=category, state="stalledUP")
+def _torrent(hash_="abc", name="Show S01", category="tv", infohash_v1=None):
+    return TorrentInfo(
+        hash=hash_,
+        infohash_v1=infohash_v1 if infohash_v1 is not None else hash_,
+        name=name,
+        category=category,
+        state="stalledUP",
+    )
 
 
 def test_requires_an_arr_client():
@@ -126,6 +138,22 @@ def test_dry_run_makes_no_mutating_calls():
     client.delete_torrent.assert_not_called()
     arr.trigger_search.assert_not_called()
     assert result.queue_handled == 1  # still counted as "would handle"
+
+
+def test_hybrid_torrent_uses_v1_hash_for_arr_and_client_hash_for_delete():
+    # v2/hybrid torrent: qBittorrent's own hash differs from the v1 info hash the
+    # *arr stores as the download id. Arr lookups must use v1; the qBittorrent
+    # deletion must use qBittorrent's hash (else it 404s).
+    arr = _arr()
+    arr.find_history_record.return_value = HistoryRecord(series_id=5)
+    torrent = _torrent(hash_="qbhash", infohash_v1="v1hash")
+    client = _client([torrent], [DEAD])
+
+    handle_unregistered(_config(dry=False), client, [arr])
+
+    arr.find_queue_item.assert_called_once_with("v1hash")
+    arr.find_history_record.assert_called_once_with("v1hash")
+    client.delete_torrent.assert_called_once_with("qbhash", delete_files=True)
 
 
 def test_queue_preferred_over_history():

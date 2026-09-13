@@ -23,14 +23,16 @@ import logging
 from dataclasses import dataclass
 
 from qbit_torrent_files_cleaner.arr import ArrClient
-from qbit_torrent_files_cleaner.client import QBittorrentClient, TrackerInfo
+from qbit_torrent_files_cleaner.client import QBittorrentClient, TorrentInfo, TrackerInfo
 from qbit_torrent_files_cleaner.config import Config
 
 logger = logging.getLogger(__name__)
 
 # qBittorrent tracker status codes (WebUI API).
 _TRACKER_STATUS_WORKING = 2
-_TRACKER_STATUS_NOT_WORKING = 4
+# A tracker that rejected the torrent reports either the generic "not working" (4)
+# or, on newer qBittorrent (observed on 5.2.x), a dedicated "not registered" (5).
+_TRACKER_STATUS_FAILED = frozenset({4, 5})
 
 
 @dataclass(frozen=True)
@@ -60,7 +62,7 @@ def is_unregistered(trackers: list[TrackerInfo], patterns: list[str]) -> bool:
 
     lowered = [pattern.lower() for pattern in patterns]
     for tracker in real:
-        if tracker.status != _TRACKER_STATUS_NOT_WORKING:
+        if tracker.status not in _TRACKER_STATUS_FAILED:
             continue
         message = tracker.message.lower()
         if any(pattern in message for pattern in lowered):
@@ -107,9 +109,9 @@ def handle_unregistered(
         unregistered += 1
         logger.info("Unregistered torrent: %s (%s)", torrent.name, torrent.hash)
 
-        if _handle_via_queue(torrent.hash, torrent.name, arr_clients, is_dry_run):
+        if _handle_via_queue(torrent.infohash_v1, torrent.name, arr_clients, is_dry_run):
             queue_handled += 1
-        elif _handle_via_history(torrent.hash, torrent.name, client, arr_clients, is_dry_run):
+        elif _handle_via_history(torrent, client, arr_clients, is_dry_run):
             imported_handled += 1
         else:
             logger.warning(
@@ -163,25 +165,28 @@ def _handle_via_queue(
 
 
 def _handle_via_history(
-    torrent_hash: str,
-    torrent_name: str,
+    torrent: TorrentInfo,
     client: QBittorrentClient,
     arr_clients: list[ArrClient],
     is_dry_run: bool,
 ) -> bool:
-    """Handle an already-imported torrent via \\*arr history. Returns True if handled."""
+    """Handle an already-imported torrent via \\*arr history. Returns True if handled.
+
+    The \\*arr history is looked up by the v1 info hash (the download id), while the
+    qBittorrent deletion is keyed by qBittorrent's own torrent hash.
+    """
     for arr in arr_clients:
-        record = arr.find_history_record(torrent_hash)
+        record = arr.find_history_record(torrent.infohash_v1)
         if record is None:
             continue
         logger.info(
             "%s: %s imported torrent %s and triggering a replacement search",
             arr.name,
             "would delete + search" if is_dry_run else "deleting + searching",
-            torrent_name,
+            torrent.name,
         )
         if not is_dry_run:
-            client.delete_torrent(torrent_hash, delete_files=True)
+            client.delete_torrent(torrent.hash, delete_files=True)
             arr.trigger_search(record)
         return True
     return False
