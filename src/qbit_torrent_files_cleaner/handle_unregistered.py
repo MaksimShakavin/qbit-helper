@@ -39,6 +39,12 @@ _TRACKER_STATUS_WORKING = 2
 # or, on newer qBittorrent (observed on 5.2.x), a dedicated "not registered" (5).
 _TRACKER_STATUS_FAILED = frozenset({4, 5})
 
+# The \*arr ``trackedDownloadState`` for a grab that already imported successfully and
+# is only still seeding. Deleting such a queue item does not blocklist or trigger a
+# redownload (the \*arr only does that for a still-pending grab), so these are routed to
+# the history path instead, which forces a targeted replacement search.
+_QUEUE_STATE_IMPORTED = "imported"
+
 
 @dataclass(frozen=True)
 class HandleUnregisteredResult:
@@ -163,11 +169,25 @@ def _handle_via_queue(
     arr_clients: list[ArrClient],
     is_dry_run: bool,
 ) -> bool:
-    """Handle a torrent still tracked in an \\*arr queue. Returns True if handled."""
+    """Handle a torrent still tracked in an \\*arr queue. Returns True if handled.
+
+    A queue item whose grab already *imported* (it is only still seeding) is not handled
+    here: deleting it would remove the torrent + data without the \\*arr blocklisting the
+    release or searching for a replacement. Returning False lets the caller fall through
+    to the history path, which triggers an explicit search before deleting.
+    """
     for arr in arr_clients:
         item = arr.find_queue_item(torrent_hash)
         if item is None:
             continue
+        if item.tracked_download_state == _QUEUE_STATE_IMPORTED:
+            logger.info(
+                "%s: queue item for %s already imported; routing to history path for a "
+                "replacement search",
+                arr.name,
+                torrent_name,
+            )
+            return False
         logger.info(
             "%s: %s queue item for %s (blocklist + redownload)",
             arr.name,

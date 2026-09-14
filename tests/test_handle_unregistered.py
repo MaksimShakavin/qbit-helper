@@ -149,6 +149,42 @@ def test_history_search_failure_leaves_torrent_undeleted():
     assert result.errors == 1
 
 
+def test_imported_queue_item_routes_to_history_search():
+    # A queue item whose grab already imported (only still seeding) cannot be
+    # blocklisted/redownloaded by a queue delete, so it must fall through to the history
+    # path: an explicit replacement search, then delete. No queue delete happens.
+    arr = _arr()
+    arr.find_queue_item.return_value = QueueItem(
+        id=7, download_id="abc", title="Show", tracked_download_state="imported"
+    )
+    arr.find_history_record.return_value = HistoryRecord(series_id=5)
+    client = _client([_torrent()], [DEAD])
+
+    result = handle_unregistered(_config(dry=False), client, [arr])
+
+    arr.delete_queue_item.assert_not_called()
+    arr.trigger_search.assert_called_once()
+    client.delete_torrent.assert_called_once_with("abc", delete_files=True)
+    assert result.queue_handled == 0
+    assert result.imported_handled == 1
+
+
+def test_downloading_queue_item_still_uses_queue_path():
+    # A still-downloading grab is handled in place (blocklist + redownload), not routed
+    # to history.
+    arr = _arr()
+    arr.find_queue_item.return_value = QueueItem(
+        id=7, download_id="abc", title="Show", tracked_download_state="downloading"
+    )
+    client = _client([_torrent()], [DEAD])
+
+    result = handle_unregistered(_config(dry=False), client, [arr])
+
+    arr.delete_queue_item.assert_called_once_with(7)
+    client.delete_torrent.assert_not_called()
+    assert result.queue_handled == 1
+
+
 def test_reports_when_not_in_any_arr():
     client = _client([_torrent()], [DEAD])
     result = handle_unregistered(_config(dry=False), client, [_arr()])

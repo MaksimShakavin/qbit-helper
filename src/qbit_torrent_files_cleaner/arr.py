@@ -39,11 +39,18 @@ class ArrKind(Enum):
 
 @dataclass(frozen=True)
 class QueueItem:
-    """A queue entry, reduced to the fields the tool acts on."""
+    """A queue entry, reduced to the fields the tool acts on.
+
+    ``tracked_download_state`` is the \\*arr's own view of the grab's progress (e.g.
+    ``downloading`` vs ``imported``). It matters because an already-``imported`` grab
+    that is merely still seeding cannot be blocklisted or auto-redownloaded by deleting
+    the queue item — the \\*arr only does that for a grab it still considers pending.
+    """
 
     id: int
     download_id: str
     title: str
+    tracked_download_state: str = ""
 
 
 @dataclass(frozen=True)
@@ -124,6 +131,7 @@ class ArrClient:
                     id=int(record["id"]),
                     download_id=record_id,
                     title=str(record.get("title", "") or ""),
+                    tracked_download_state=str(record.get("trackedDownloadState", "") or ""),
                 )
         return None
 
