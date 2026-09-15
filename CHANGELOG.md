@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/MaksimShakavin/qbit-torrent-files-cleaner/compare/v0.3.0...v0.3.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* detect tracker status 5 as unregistered and key qBittorrent calls by client hash ([#5](https://github.com/MaksimShakavin/qbit-torrent-files-cleaner/issues/5)) ([7e265e5](https://github.com/MaksimShakavin/qbit-torrent-files-cleaner/commit/7e265e5cb711560ac856dea774f3031c99267d84))
+
 ## [0.3.0](https://github.com/MaksimShakavin/qbit-torrent-files-cleaner/compare/v0.2.0...v0.3.0) (2026-09-13)
 
 
