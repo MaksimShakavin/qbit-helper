@@ -70,13 +70,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.info("No commands enabled in config; nothing to do.")
         return 0
 
+    unregistered_result = None
     try:
         client = QBittorrentClient(config.qbittorrent)
         client.connect()
         if config.commands.monitor_completed:
             monitor_completed(config, client)
         if config.commands.handle_unregistered:
-            handle_unregistered(config, client, build_arr_clients(config))
+            unregistered_result = handle_unregistered(config, client, build_arr_clients(config))
     except (QBittorrentError, ArrError) as exc:
         logger.error("%s", exc)
         return 1
@@ -85,6 +86,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     except Exception:
         logger.exception("Unexpected error")
+        return 1
+
+    if unregistered_result is not None and unregistered_result.errors:
+        logger.error(
+            "handle_unregistered finished with %d error(s); see the log above.",
+            unregistered_result.errors,
+        )
         return 1
 
     return 0

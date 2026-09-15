@@ -39,11 +39,18 @@ class ArrKind(Enum):
 
 @dataclass(frozen=True)
 class QueueItem:
-    """A queue entry, reduced to the fields the tool acts on."""
+    """A queue entry, reduced to the fields the tool acts on.
+
+    ``tracked_download_state`` is the \\*arr's own view of the grab's progress (e.g.
+    ``downloading`` vs ``imported``). It matters because an already-``imported`` grab
+    that is merely still seeding cannot be blocklisted or auto-redownloaded by deleting
+    the queue item — the \\*arr only does that for a grab it still considers pending.
+    """
 
     id: int
     download_id: str
     title: str
+    tracked_download_state: str = ""
 
 
 @dataclass(frozen=True)
@@ -124,6 +131,7 @@ class ArrClient:
                     id=int(record["id"]),
                     download_id=record_id,
                     title=str(record.get("title", "") or ""),
+                    tracked_download_state=str(record.get("trackedDownloadState", "") or ""),
                 )
         return None
 
@@ -152,8 +160,13 @@ class ArrClient:
     # -- History + search (imported / seeding torrents) ---------------------
 
     def find_history_record(self, download_id: str) -> HistoryRecord | None:
-        """Find the movie/series a download belonged to via history."""
-        payload = self._request("GET", "history", params={"downloadId": download_id})
+        """Find the movie/series a download belonged to via history.
+
+        The \\*arr history ``downloadId`` filter matches case-sensitively and the apps
+        store the info hash upper-cased, so the query must be upper-cased too (our
+        hashes are lower-cased for the queue comparison).
+        """
+        payload = self._request("GET", "history", params={"downloadId": download_id.upper()})
         if isinstance(payload, dict):
             records: list[dict[str, Any]] = payload.get("records", [])
         else:

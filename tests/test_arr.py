@@ -52,6 +52,34 @@ def test_find_queue_item_matches_download_id_case_insensitively(session):
     assert item.title == "A Movie"
 
 
+def test_find_queue_item_captures_tracked_download_state(session):
+    session.request.return_value = _response(
+        {
+            "records": [
+                {
+                    "id": 7,
+                    "downloadId": "ABCDEF",
+                    "title": "A Movie",
+                    "trackedDownloadState": "imported",
+                }
+            ],
+            "totalRecords": 1,
+        }
+    )
+    item = _radarr().find_queue_item("abcdef")
+    assert item is not None
+    assert item.tracked_download_state == "imported"
+
+
+def test_find_queue_item_defaults_tracked_download_state_to_empty(session):
+    session.request.return_value = _response(
+        {"records": [{"id": 7, "downloadId": "ABCDEF", "title": "A Movie"}], "totalRecords": 1}
+    )
+    item = _radarr().find_queue_item("abcdef")
+    assert item is not None
+    assert item.tracked_download_state == ""
+
+
 def test_find_queue_item_returns_none_when_absent(session):
     session.request.return_value = _response(
         {"records": [{"id": 1, "downloadId": "OTHER"}], "totalRecords": 1}
@@ -85,6 +113,15 @@ def test_find_history_record_radarr(session):
     session.request.return_value = _response({"records": [{"movieId": 42}]})
     record = _radarr().find_history_record("abc")
     assert record == HistoryRecord(movie_id=42)
+
+
+def test_find_history_record_queries_uppercased_download_id(session):
+    # *arr stores the info hash upper-cased and its history downloadId filter is
+    # case-sensitive, so the lookup must upper-case the (lower-cased) hash.
+    session.request.return_value = _response({"records": [{"movieId": 42}]})
+    _radarr().find_history_record("abcdef123")
+    _, kwargs = session.request.call_args
+    assert kwargs["params"] == {"downloadId": "ABCDEF123"}
 
 
 def test_find_history_record_sonarr_reads_season(session):

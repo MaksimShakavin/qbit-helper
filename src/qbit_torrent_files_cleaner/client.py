@@ -21,11 +21,15 @@ class QBittorrentError(Exception):
 class TorrentInfo:
     """The subset of a torrent's fields the tool cares about.
 
-    ``hash`` is the v1 info hash when available (this is what Radarr/Sonarr use as
-    the download id), falling back to whatever qBittorrent reports as ``hash``.
+    ``hash`` is qBittorrent's own torrent hash and is what every qBittorrent WebUI
+    call must be keyed by — for v2/hybrid torrents this differs from the v1 info
+    hash, and using the wrong one yields a 404. ``infohash_v1`` is the v1 info hash
+    Radarr/Sonarr use as the download id (falling back to ``hash`` when qBittorrent
+    reports no separate v1 hash, e.g. legacy v1-only torrents).
     """
 
     hash: str
+    infohash_v1: str
     name: str
     category: str
     state: str
@@ -97,6 +101,8 @@ class QBittorrentClient:
 
         When ``categories`` is empty or ``None`` every torrent is returned. Hashes
         are lower-cased so they compare cleanly against Radarr/Sonarr download ids.
+        ``hash`` is qBittorrent's own torrent hash (used for all WebUI calls);
+        ``infohash_v1`` is what the \\*arr apps store as the download id.
         """
         wanted = set(categories or ())
         try:
@@ -109,12 +115,12 @@ class QBittorrentClient:
             category = getattr(torrent, "category", "") or ""
             if wanted and category not in wanted:
                 continue
-            torrent_hash = (
-                getattr(torrent, "infohash_v1", None) or getattr(torrent, "hash", None) or ""
-            )
+            client_hash = str(getattr(torrent, "hash", "") or "")
+            infohash_v1 = str(getattr(torrent, "infohash_v1", "") or "") or client_hash
             result.append(
                 TorrentInfo(
-                    hash=str(torrent_hash).lower(),
+                    hash=client_hash.lower(),
+                    infohash_v1=infohash_v1.lower(),
                     name=str(getattr(torrent, "name", "") or ""),
                     category=str(category),
                     state=str(getattr(torrent, "state", "") or ""),
